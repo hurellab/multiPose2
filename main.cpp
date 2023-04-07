@@ -278,6 +278,7 @@ int main(int argc, char *argv[])
   double clavR = (midShoul0 - C0.row(22)).norm();
   double shoulL = (midShoul0 - C0.row(0)).norm();
   double shoulR = (midShoul0 - C0.row(3)).norm();
+  double mid2spineC = (midShoul0-C0.row(18)).norm();
   /////////////////////////rotation calculation//////////////////////////////
   // complete R
   Eigen::Matrix3d root0;
@@ -298,6 +299,8 @@ int main(int argc, char *argv[])
   Eigen::MatrixXd Vv;
   MatrixList C_vec;
   std::vector<int> extBE = {5, 8, 11, 14};
+  Eigen::VectorXi legs(9);
+  legs<<6, 7, 8, 9, 10, 11, 16, 25, 26;
   for(size_t f=0;f<RAW.size();f++)
   {
     Eigen::MatrixXd C1 = RAW[f];
@@ -315,11 +318,27 @@ int main(int argc, char *argv[])
       if(BE(i,1)>22) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (C1.row(BE(i-1,1))-C1.row(BE(i-1,0))).normalized()*L(BE(i,1)); // extremities
       else if(BE(i,0)<16) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (C1.row(BE(i,1))-C1.row(BE(i,0))).normalized()*L(BE(i,1)); // limbs
       else if (i<3) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (midShoul-C1.row(16)).normalized()*L(BE(i,1)); // spine
-      // if (i==21 || i==22 || i==0 || i==3) continue;
-      // else if(BE(i,1)>22) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (C1.row(BE(i-1,1))-C1.row(BE(i-1,0))).normalized()*L(BE(i,1)); // extremities
-      // else if (i<3) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (midShoul-C1.row(16)).normalized()*L(BE(i,1)); // spine
-      // else C1.row(BE(i,1)) = C1.row(BE(i,0)) + (C1.row(BE(i,1))-C1.row(BE(i,0))).normalized()*L(BE(i,1)); // limbs
     }
+    Eigen::RowVector3d toSpineC = toLshoul.cross(Eigen::RowVector3d(C1.row(16)-midShoul).cross(toLshoul)).normalized();
+    C1.row(18) = midShoul+toSpineC*mid2spineC;
+    C1.row(19) = C1.row(18)-toSpineC*L(19);
+    Eigen::RowVector3d toLhip = (C1.row(6)-C1.row(9)).normalized();
+    Eigen::RowVector3d toSpineN = toLhip.cross(Eigen::RowVector3d(C1.row(9)-C1.row(18))).cross(toLhip).normalized();
+    C1.row(17) = C1.row(16) - toSpineN*L(17);
+    double shortestSpine = (C1.row(17)-C1.row(18)).norm();
+    if(shortestSpine <L(18) || (C1.row(18)-C1.row(17)).dot(C1.row(17)-C1.row(16))<0)
+    {
+
+    }
+    else
+    {
+      double l = shortestSpine - L(18);
+      // Eigen::RowVector3d legTrans = l * (C1.row(18)-C1.row(17)).normalized();
+      Eigen::MatrixXd trans = Eigen::MatrixXd::Zero(C1.rows(), 3);
+      igl::slice_into((l * (C1.row(18)-C1.row(17)).normalized()).replicate(legs.rows(),1), legs,trans);
+      C1 = C1 + trans;
+    }
+
 
     //root
     //set closest spineC
