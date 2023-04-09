@@ -101,6 +101,8 @@ int main(int argc, char *argv[])
   numVo = Vo.rows();
   Eigen::MatrixXd VT, W, Wj;
   Eigen::MatrixXi TT;
+  // Eigen::VectorXi G(BE.rows());
+  // G<<0, 1, 2, 15, 2, 2, 3, 4, 5, 2, 2, 6, 7, 8, 0, 9, 10, 11, 0, 12, 13, 14;
   if(!igl::readDMAT(phantom+"_ELE.dmat", TT) ||
      !igl::readDMAT(phantom+"_NODE.dmat", VT) || 
      !igl::readDMAT(phantom+"_j.dmat", Wj) || 
@@ -126,25 +128,23 @@ int main(int argc, char *argv[])
     igl::writeDMAT(phantom+"_NODE.dmat", VT, false);
     Vo = Vo.topRows(numVo);
     // BBW - BONE
-    Eigen::MatrixXd bc1;
+    Eigen::MatrixXd bc;
     Eigen::VectorXi b;
-    if(igl::boundary_conditions(VT, TT, C, Eigen::VectorXi(), BE, Eigen::MatrixXi(), b, bc1))
+    if(igl::boundary_conditions(VT, TT, C, Eigen::VectorXi(), BE, Eigen::MatrixXi(), b, bc))
       std::cout<<"boundary condition was generated for "<< b.rows()<<" vertices." <<std::endl;
     else
     {
       std::cout<<"boundary condition generation failed."<<std::endl;
       return 1;
     }
-    Eigen::VectorXi G(BE.rows());
-    G<<0, 1, 2, 15, 2, 2, 3, 4, 5, 2, 2, 6, 7, 8, 0, 9, 10, 11, 0, 12, 13, 14;
-    Eigen::MatrixXd bc = Eigen::MatrixXd::Zero(b.rows(),G.maxCoeff()+1);
-    for(int i=0;i<BE.rows();i++) bc.col(G(i))+= bc1.col(i);
-    bc1.resize(0, 0);
+    // Eigen::MatrixXd bc = Eigen::MatrixXd::Zero(b.rows(),G.maxCoeff()+1);
+    // for(int i=0;i<BE.rows();i++) bc.col(G(i))+= bc1.col(i);
+    // bc1.resize(0, 0);
     b.conservativeResize(b.rows() + 4);
     b.bottomRows(4) = Eigen::VectorXi::LinSpaced(4, numVo+12, numVo+15);
     bc.conservativeResize(b.rows(), bc.cols());
     bc.bottomRows(4) = Eigen::MatrixXd::Zero(4, bc.cols());
-    bc.block(bc.rows()-4, bc.cols()-1, 4, 1) = Eigen::VectorXd::Ones(4);
+    bc.block(bc.rows()-4, 3, 4, 1) = Eigen::VectorXd::Ones(4);
     igl::BBWData bbw_data;
     bbw_data.active_set_params.max_iter = 10;
     bbw_data.verbosity = 2;
@@ -257,7 +257,7 @@ int main(int argc, char *argv[])
     if(BE(i,0)>15) continue;
     int b=0;
     if(BE(i,1)<16) for(;b<BE_s.rows();b++) if(BE_s(b,1)==BE(i,1)) break;
-    else for(;b<BE_s.rows();b++) if(BE_s(b,1)==BE(i,0)) break;
+    else for(;b<BE_s.rows();b++) {if(BE_s(b,1)==BE(i,0)) break;}
     C0.row(BE(i,1)) = C0.row(BE(i,0))+L(b,0)/L0(b)*(C.row(BE(i,1))-C.row(BE(i,0)));
   }
   // PHANTOM SCALING
@@ -279,6 +279,11 @@ int main(int argc, char *argv[])
   double shoulL = (midShoul0 - C0.row(0)).norm();
   double shoulR = (midShoul0 - C0.row(3)).norm();
   double mid2spineC = (midShoul0-C0.row(18)).norm();
+  // CALCULATE BONE VECTORS
+  Eigen::MatrixXd BV(BE.rows(), 3); 
+  for(int i=0;i<BE.rows();i++)
+    BV.row(i) = (C0.row(BE(i, 1)) - C0.row(BE(i, 0))).normalized();
+  
   /////////////////////////rotation calculation//////////////////////////////
   // complete R
   Eigen::Matrix3d root0;
@@ -297,7 +302,7 @@ int main(int argc, char *argv[])
   std::vector<RotationList> vQ_vec;
   std::vector<std::vector<Eigen::Vector3d>> T_vec;
   Eigen::MatrixXd Vv;
-  MatrixList C_vec;
+  MatrixList C_vec, C_vec1;
   std::vector<int> extBE = {5, 8, 11, 14};
   Eigen::VectorXi legs(9);
   legs<<6, 7, 8, 9, 10, 11, 16, 25, 26;
@@ -305,7 +310,7 @@ int main(int argc, char *argv[])
   {
     Eigen::MatrixXd C1 = RAW[f];
     C1.conservativeResize(27, 3);
-    C1.row(16) = (1-rootL)*C1.row(6)+rootL*C1.row(9); //root
+    // C1.row(16) = (1-rootL)*C1.row(6)+rootL*C1.row(9); //root
     C1.row(20) = (C1.row(15)+C1.row(14))*0.5; //head
     Eigen::RowVector3d midShoul = C1.row(0)*shoulM + C1.row(3)*(1-shoulM);
     Eigen::RowVector3d toLshoul = (C1.row(0)-C1.row(3)).normalized();
@@ -313,66 +318,66 @@ int main(int argc, char *argv[])
     C1.row(0) = midShoul + toLshoul * shoulL; //shoulL
     C1.row(22) = midShoul - toLshoul * clavR; //clavR
     C1.row(3) = midShoul - toLshoul * shoulR; //shoulR
+    Eigen::RowVector3d toSpineC = (Eigen::RowVector3d::UnitZ().cross(toLshoul)).cross(toLshoul).normalized();
+    C1.row(18) = midShoul+toSpineC*mid2spineC;
+    C1.row(19) = C1.row(18)-toSpineC*L(19);
+    C1.row(17) = C1.row(18)+L(18)*(toSpineC - Eigen::RowVector3d::UnitZ()).normalized();
+    Eigen::RowVector3d toLhip = C1.row(6)-C1.row(9);
+    toLhip(2) = 0; toLhip.normalize();
+    C1.row(16) = C1.row(17) - Eigen::RowVector3d::UnitZ()*L(17);
+    C1.row(9) =  C1.row(16) - toLhip*L(9);
+    C1.row(6) =  C1.row(16) + toLhip*L(6);
+    
+    // Eigen::RowVector3d toSpineC = toLshoul.cross(Eigen::RowVector3d(C1.row(16)-midShoul).cross(toLshoul)).normalized();
     for(int i=0;i<BE.rows();i++)
     {
       if(BE(i,1)>22) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (C1.row(BE(i-1,1))-C1.row(BE(i-1,0))).normalized()*L(BE(i,1)); // extremities
       else if(BE(i,0)<16) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (C1.row(BE(i,1))-C1.row(BE(i,0))).normalized()*L(BE(i,1)); // limbs
-      else if (i<3) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (midShoul-C1.row(16)).normalized()*L(BE(i,1)); // spine
-    }
-    Eigen::RowVector3d toSpineC = toLshoul.cross(Eigen::RowVector3d(C1.row(16)-midShoul).cross(toLshoul)).normalized();
-    C1.row(18) = midShoul+toSpineC*mid2spineC;
-    C1.row(19) = C1.row(18)-toSpineC*L(19);
-    Eigen::RowVector3d toLhip = (C1.row(6)-C1.row(9)).normalized();
-    Eigen::RowVector3d toSpineN = toLhip.cross(Eigen::RowVector3d(C1.row(9)-C1.row(18))).cross(toLhip).normalized();
-    C1.row(17) = C1.row(16) - toSpineN*L(17);
-    double shortestSpine = (C1.row(17)-C1.row(18)).norm();
-    if(shortestSpine <L(18) || (C1.row(18)-C1.row(17)).dot(C1.row(17)-C1.row(16))<0)
-    {
-
-    }
-    else
-    {
-      double l = shortestSpine - L(18);
-      // Eigen::RowVector3d legTrans = l * (C1.row(18)-C1.row(17)).normalized();
-      Eigen::MatrixXd trans = Eigen::MatrixXd::Zero(C1.rows(), 3);
-      igl::slice_into((l * (C1.row(18)-C1.row(17)).normalized()).replicate(legs.rows(),1), legs,trans);
-      C1 = C1 + trans;
+      // else if (i<3) C1.row(BE(i,1)) = C1.row(BE(i,0)) + (midShoul-C1.row(16)).normalized()*L(BE(i,1)); // spine
     }
 
-
-    //root
-    //set closest spineC
-    // Eigen::RowVector3d toRshoul = (C1.row(3)-C1.row(0)).normalized(); //plane normal
-    // Eigen::RowVector3d midShoul = (C1.row(3)+C1.row(0))*0.5; //plane origin
-    // //project root to shoul(N), midshoul(P) plane
-    // Eigen::Matrix3d shoul1;
-    // shoul1.col(1) = (C1.row(3)-C1.row(0)).normalized(); //toRshol
-    // shoul1.col(0) = ((midShoul-C1.row(16)) + (C1.row(16)-midShoul).dot(shoul1.col(1))*shoul1.col(1).transpose()).normalized().transpose();
-    // shoul1.col(2) = shoul1.col(0).cross(shoul1.col(1));
-    // Eigen::Quaterniond q(shoul1*shoul0.inverse());
-    // C1.row(19) = (q*C.row(19)).transpose() + (midShoul - midShoul0);
-
-    // //extremities
-    // for(int i=0;i<4;i++) 
-    //   C1.row(i+23) = C.row(BE(extBE[i], 1)) + (C.row(BE(extBE[i], 1))-C.row(BE(extBE[i], 0))).normalized()*L(i+5, 0);
-    // //head
-    // C1.row(20) = (C1.row(14) + C1.row(15))*0.5;
-    // C1.row(18) = C1.row(16) + (C1.row(19)-C1.row(16))*0.7;
-    // C1.row(17) = (C1.row(16)+C1.row(18))*0.5;
     C_vec.push_back(C1);
-    //set closest spineN
 
-    // Eigen::RowVector3d toRhip = (C1.row(9)-C1.row(6)).normalized();
-
+    //calculate rotation
+    RotationList vQ(BE.rows());
+    // complete R
+    Eigen::Matrix3d root1;
+    root1.col(0) = (C1.row(17)-C1.row(16)).normalized(); // root-spineN
+    root1.col(1) = (C1.row(9)-C1.row(6)).normalized(); // toRhip
+    root1.col(2) = root1.col(0).cross(root1.col(1));
+    Eigen::Quaterniond rootQ(root1*root0.inverse());
+    Eigen::Matrix3d shoul1;
+    shoul1.col(0) = (C1.row(19)-C1.row(18)).normalized(); // spineC-neck
+    shoul1.col(1) = (C1.row(3)-C1.row(0)).normalized(); // toRshoul
+    shoul1.col(2) = shoul1.col(0).cross(shoul1.col(1));
+    Eigen::Quaterniond shoulQ(shoul1*shoul0.inverse());
+    Eigen::Matrix3d head1;
+    head1.col(0) = (C1.row(13)-C1.row(12)).normalized(); // eye line
+    head1.col(1) = ((C1.row(12)+C1.row(13))*0.5-C1.row(20)).normalized();
+    head1.col(2) = head1.col(0).cross(head1.col(1));
+    Eigen::Quaterniond headQ(head1*head0.inverse());
     
-    // Eigen::Quaterniond q;
-    // q.setFromTwoVectors(shoul0.col(1), toRshoul);
-    // q*(C1.row(19)-C1.row(18));
-    // Eigen::RowVector3d toRshoul = (C1.row(3)-C1.row(0)).normalized();
+    for(int i=0;i<BE.rows();i++)
+    {
+      if(BE(i,0)==16) vQ[i] = rootQ;
+      else if(BE(i,0)==18) vQ[i] = shoulQ;
+      else if(BE(i,0)==19) vQ[i] = headQ;
+      else if(i>=14 && i<=21) vQ[i] = rootQ;
+      else
+      {
+        Eigen::Vector3d v1 = (C1.row(BE(i, 1))-C1.row(BE(i, 0))).normalized();
+        vQ[i].setFromTwoVectors(BV.row(i), v1);
+      }
+    }
 
+    //set new joint points
+    
+    for(int i=0;i<BE.rows();i++)
+      C1.row(BE(i, 1)) = C1.row(BE(i, 0)) + (vQ[i]*BV.row(i).transpose()*L(BE(i,1))).transpose();
+    for(int i=12;i<16;i++) C1.row(i) = C1.row(15) + (headQ*(C0.row(i)-C0.row(15)).transpose()).transpose();
+    C_vec1.push_back(C1);
     // Eigen::RowVector3d toRhip = (C1.row(9)-C1.row(6)).normalized();
-    // Eigen::RowVector3d toRshoul = (C1.row(3)-C1.row(0)).normalized();
-    // std::cout<<std::acos(toRhip.dot(toRshoul))/M_PI*180<<std::endl;
+
     Vv.conservativeResize(Vv.rows() + C1.rows(), 3);
     Vv.bottomRows(C1.rows()) = C1;
   }
@@ -404,6 +409,7 @@ int main(int argc, char *argv[])
   Eigen::MatrixXi Ff;
   vr.data().set_edges(C0, BE, sea_green);
   vr.data().set_mesh(Vv, Ff);
+  vr.data().set_points(C0, sea_green);
   vr.data().point_size = 8;
   int frame(0);
   vr.callback_key_down = [&](igl::opengl::glfw::Viewer _vr, unsigned int key, int modifiers)->bool{
@@ -412,12 +418,12 @@ int main(int argc, char *argv[])
   case ']':
     frame = std::min((int)C_vec.size()-1, frame+1);
     vr.data().set_edges(C_vec[frame], BE, sea_green);
-    vr.data().set_points(C_vec[frame], sea_green);
+    vr.data().set_points(C_vec1[frame], sea_green);
     break;
   case '[':
     frame = std::max(0, frame-1);
     vr.data().set_edges(C_vec[frame], BE, sea_green);
-    vr.data().set_points(C_vec[frame], sea_green);
+    vr.data().set_points(C_vec1[frame], sea_green);
     break;
   default:
     break;

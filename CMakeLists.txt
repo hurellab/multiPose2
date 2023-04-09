@@ -13,15 +13,3 @@ file(GLOB SRC_FILES *.cpp)
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_link_libraries(${PROJECT_NAME} PUBLIC igl::glfw igl_copyleft::tetgen)
 
-# copy files required for TGF generation
-set(DATA_SCRIPTS
-  yolo.tgf
-  )
-
-foreach(_script ${DATA_SCRIPTS})
-  configure_file(
-    ${PROJECT_SOURCE_DIR}/${_script}
-    ${PROJECT_BINARY_DIR}/${_script}
-    COPYONLY
-    )
-endforeach()
