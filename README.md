@@ -1,3 +1,1 @@
-# yoloPose
-# yoloPose
 # multiPose2
